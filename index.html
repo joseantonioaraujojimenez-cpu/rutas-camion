@@ -124,23 +124,17 @@ $('diagnoseRoute').onclick=diagnoseFailedSegment;
 $('retryRepair').onclick=retryRepair;
 $('cancelRepair').onclick=()=>{clearRepair();status('Ajuste cancelado.')};
 function errMsg(j,code){return j?.error?.message||j?.message||'Error HTTP '+code}
-// V19: API de HeiGIT. La V18 ya usaba este dominio; aquí unificamos el acceso y mejoramos los errores de red.
+// V20: restore the direct request used in V16; keep V17 map correction tools.
 const HEIGIT_DIRECTIONS='https://api.heigit.org/openrouteservice/v2/directions/driving-hgv/geojson';
 async function heigitRequest(key,body){
- const controller=new AbortController();
- const timer=setTimeout(()=>controller.abort(),25000);
  try{
   const response=await fetch(HEIGIT_DIRECTIONS,{
-   method:'POST',mode:'cors',headers:{'Authorization':key,'Content-Type':'application/json','Accept':'application/geo+json'},
-   body:JSON.stringify(body),signal:controller.signal
+   method:'POST',headers:{Authorization:key,'Content-Type':'application/json',Accept:'application/geo+json'},body:JSON.stringify(body)
   });
   const raw=await response.text();let data={};
-  try{data=raw?JSON.parse(raw):{}}catch(e){data={message:'Respuesta no JSON del servidor ('+response.status+').'}}
+  try{data=raw?JSON.parse(raw):{}}catch(e){data={message:'Respuesta no JSON del servidor (HTTP '+response.status+'): '+raw.slice(0,180)}}
   return {response,data};
- }catch(e){
-  if(e.name==='AbortError')throw Error('Tiempo de espera agotado (25 s). Revisa tu conexión y vuelve a intentar una sola vez.');
-  throw Error('No se pudo conectar con api.heigit.org ('+(e.message||'error de red')+'). Puede ser un bloqueo de red/CORS o un fallo temporal. Abre Chrome > F12 > Network para comprobar la petición. No se han inventado kilómetros.');
- }finally{clearTimeout(timer)}
+ }catch(e){throw Error('Fallo de red al contactar HeiGIT: '+(e.message||'sin detalle')+'. Comprueba conexión y consola del navegador.');}
 }
 
 async function geocode(p){
@@ -189,7 +183,7 @@ async function segment(a,b,key,restriction,pass=[]){
   lastError=errMsg(j,res.status);
   if(res.status===401||res.status===403)throw Error('Tramo '+labels[0]+' → '+labels.at(-1)+': acceso API rechazado (HTTP '+res.status+'). Comprueba la clave, los permisos y la cuota en HeiGIT. '+lastError);
   if(res.status===429)throw Error('Cuota o límite por minuto agotado (HTTP 429). Espera antes de reintentar. '+lastError);
-  if(res.status>=500)throw Error('Servicio HeiGIT temporalmente no disponible (HTTP '+res.status+'). '+lastError);
+  if(res.status>=500)throw Error('Tramo '+labels[0]+' → '+labels.at(-1)+': HeiGIT devolvió HTTP '+res.status+'. Detalle: '+lastError+'. Es un fallo del servidor al procesar esta petición, no una distancia calculada.');
   const match=lastError.match(/coordinate\s+(\d+)/i);
   const pos=match?Number(match[1]):-1;
   const name=pos>=0&&pos<labels.length?labels[pos]:'alguno de los puntos';
