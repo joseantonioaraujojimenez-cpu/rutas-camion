@@ -514,7 +514,29 @@ $('recalc').onclick=async()=>{if(!current||!dirty)return;const key=$('api').valu
 $('undo').onclick=()=>{for(let i=via.length-1;i>=0;i--)if(via[i].length){via[i].pop();markDirty();draw(false);return}};
 $('saveedit').onclick=()=>{if(!current||dirty)return status('Recalcula antes de guardar.',true);const r=clone(current);r.name=(r.name||'Ruta')+' (modificada)';r.date=new Date().toISOString();if(save(r))status('Ruta modificada guardada.')};
 $('clear').onclick=()=>{resetVisualRoute();stops=[$('useStart').checked?{id:++seq,type:'start',country:'ES',zip:''}:null,{id:++seq,type:'load',country:'ES',zip:''},{id:++seq,type:'end',country:'ES',zip:''}].filter(Boolean);$('name').value='';renderStops();syncFinalButton();status('')};
-function renderHistory(){const h=$('history');h.innerHTML='';saved.forEach((r,i)=>{const el=document.createElement('div');el.className='route';const heading=document.createElement('strong');heading.textContent=r.name||'Ruta '+(saved.length-i);const info=document.createElement('div');info.className='muted';info.textContent=r.points.map(p=>p.country+'-'+p.zip).join(' → ')+' · Vacío '+fmt(r.empty)+' km · Cargado '+fmt(r.loaded)+' km';const b=document.createElement('button');b.className='secondary';b.textContent='Ver mapa';b.onclick=()=>{if(!r.legTypes){r.legTypes=['empty','loaded'];r.points=r.points.map((p,j)=>({...p,type:j===0?'start':j===1?'load':'end'}))}show(r)};const d=document.createElement('button');d.className='danger';d.textContent='Eliminar';d.onclick=()=>{saved.splice(i,1);persist()};el.append(heading,info,b,d);h.append(el)});if(!saved.length)h.textContent='Todavía no hay rutas guardadas.'}
+function restoreHistoryForm(r){
+ const points=Array.isArray(r.points)?r.points:[];
+ if(!points.length)return status('Esta ruta guardada no contiene paradas editables.',true);
+ stops=points.map((p,i)=>{
+  const copy=clone(p);
+  copy.id=++seq;
+  // Older saved routes may have no stop types.
+  if(!copy.type)copy.type=i===0?'start':i===points.length-1?'end':'load';
+  copy.country=copy.country||'ES';
+  copy.zip=String(copy.zip||copy.resolvedName||'');
+  copy.searchLabel=copy.searchLabel||[copy.zip,copy.resolvedName].filter(Boolean).join(' — ');
+  // The geocoded coordinates are reusable without searching again.
+  if(Array.isArray(copy.coords)&&copy.coords.length===2){
+   copy.selectedCoords=copy.coords.slice();
+   copy.selectedName=copy.resolvedName||copy.searchLabel;
+  }
+  return copy;
+ });
+ $('name').value=r.name||'';
+ renderStops();syncFinalButton();
+ status('Ruta del historial cargada para editar. Cambia las poblaciones o paradas y pulsa Calcular y mostrar mapa. La ruta original permanece guardada.');
+}
+function renderHistory(){const h=$('history');h.innerHTML='';saved.forEach((r,i)=>{const el=document.createElement('div');el.className='route';const heading=document.createElement('strong');heading.textContent=r.name||'Ruta '+(saved.length-i);const info=document.createElement('div');info.className='muted';info.textContent=r.points.map(p=>title(p.type||'via')+': '+(p.searchLabel||p.resolvedName||((p.country||'')+'-'+(p.zip||'')))).join(' → ')+' · Vacío '+fmt(r.empty)+' km · Cargado '+fmt(r.loaded)+' km';const b=document.createElement('button');b.className='secondary';b.textContent='Ver mapa y editar';b.onclick=()=>{if(!r.legTypes){r.legTypes=['empty','loaded'];r.points=r.points.map((p,j)=>({...p,type:j===0?'start':j===1?'load':'end'}))}restoreHistoryForm(r);show(r);document.getElementById('places').scrollIntoView({behavior:'smooth',block:'start'})};const d=document.createElement('button');d.className='danger';d.textContent='Eliminar';d.onclick=()=>{saved.splice(i,1);persist()};el.append(heading,info,b,d);h.append(el)});if(!saved.length)h.textContent='Todavía no hay rutas guardadas.'}
 $('export').onclick=()=>{const mode=$('profitMode').value,c=Number($('costKm').value),m=Number($('marginKm').value);if(mode==='percent'&&m>=100){status('El margen debe ser inferior al 100 %.',true);return}const rows=[['Nombre','Fecha','Paradas','Km vacíos','Km cargados','Km totales','% vacío','Coste €/km','Modalidad beneficio','Valor beneficio','Coste total €','Beneficio €','Margen real %','Beneficio real €/km','Precio objetivo €','Conducción horas','Cargas horas','Llegada calculada desde disponibilidad'],...saved.map(r=>{const km=r.empty+r.loaded,v=pricing(km,c,m,mode);return[r.name,r.date,r.points.map(p=>p.country+'-'+p.zip+' ('+title(p.type||'via')+')').join(' → '),Math.round(r.empty),Math.round(r.loaded),Math.round(km),(100*r.empty/(km||1)).toFixed(1),c.toFixed(2),mode==='percent'?'% sobre venta':'€/km',m.toFixed(2),v.total.toFixed(2),v.profit.toFixed(2),(v.sale>0?100*v.profit/v.sale:0).toFixed(2),(km>0?v.profit/km:0).toFixed(3),v.sale.toFixed(2),(r.features||[]).reduce((s,f)=>s+(f.properties?.summary?.duration||0)/3600,0).toFixed(2),r.points.filter(p=>p.type==='load').length*Number($('loadHours').value),'Ver panel de tiempo (fecha de inicio editable)']})];const csv='\ufeff'+rows.map(row=>row.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';')).join('\r\n');const u=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=u;a.download='rutas_camion.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)};
 $('deleteall').onclick=()=>{if(confirm('¿Borrar todas las rutas guardadas?')){saved=[];persist();layer.clearLayers();current=null;['empty','loaded','total'].forEach(x=>$(x).textContent='—');$('percent').textContent='';price();timeEstimate()}};
 renderHistory();
